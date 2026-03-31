@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azaela Room 3D Planner</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
+    #canvas-container { width: 100vw; height: 100vh; }
+
+    #ui-panel {
+      position: fixed; top: 16px; right: 16px;
+      background: rgba(15,20,40,0.88);
+      color: #e0e8ff; padding: 14px 16px;
+      border-radius: 12px; z-index: 100;
+      min-width: 210px; border: 1px solid #2a4070;
+    }
+    #ui-panel h2 { font-size: 14px; margin-bottom: 8px; color: #64b5f6; letter-spacing: 0.5px; }
+    .hint { font-size: 11px; color: #8899bb; margin: 3px 0; }
+    .hint span { color: #aac4f0; font-weight: bold; }
+    #view-buttons { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    button {
+      padding: 6px 8px; background: #1a2a4a;
+      color: #c0d8ff; border: 1px solid #2a5080;
+      border-radius: 6px; cursor: pointer; font-size: 11px;
+      transition: background 0.15s;
+    }
+    button:hover { background: #2a4a7a; }
+
+    #info-bar {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,20,40,0.88); color: #aac4f0;
+      padding: 7px 18px; border-radius: 20px; font-size: 12px;
+      border: 1px solid #2a4070; display: none; white-space: nowrap;
+    }
+
+    #legend {
+      position: fixed; bottom: 16px; left: 16px;
+      background: rgba(15,20,40,0.88); color: #c0d0f0;
+      padding: 10px 14px; border-radius: 10px; font-size: 11px;
+      border: 1px solid #2a4070;
+    }
+    #legend h3 { font-size: 11px; color: #64b5f6; margin-bottom: 6px; }
+    .li { display: flex; align-items: center; margin: 4px 0; }
+    .lc { width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; }
+
+    #room-label {
+      position: fixed; top: 16px; left: 16px;
+      background: rgba(15,20,40,0.88); color: #64b5f6;
+      padding: 8px 14px; border-radius: 10px; font-size: 13px;
+      border: 1px solid #2a4070;
+    }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="room-label">Azaela &nbsp;|&nbsp; 11'10" &times; 14'0"</div>
+
+<div id="ui-panel">
+  <h2>3D Room Planner</h2>
+  <div class="hint"><span>Left drag</span> &mdash; Rotate camera</div>
+  <div class="hint"><span>Right drag / Middle</span> &mdash; Pan</div>
+  <div class="hint"><span>Scroll</span> &mdash; Zoom</div>
+  <div class="hint"><span>Click</span> furniture to select</div>
+  <div class="hint"><span>Arrow keys</span> &mdash; Move selected</div>
+  <div class="hint"><span>Q / E</span> &mdash; Rotate selected</div>
+  <div class="hint"><span>Shift + drag</span> &mdash; Free-drag furniture</div>
+  <div class="hint"><span>Esc</span> &mdash; Deselect</div>
+  <div id="view-buttons">
+    <button onclick="setView('iso')">Isometric</button>
+    <button onclick="setView('top')">Top (2D)</button>
+    <button onclick="setView('front')">Front</button>
+    <button onclick="setView('side')">Side</button>
+  </div>
+</div>
+
+<div id="info-bar"></div>
+
+<div id="legend">
+  <h3>Furniture</h3>
+  <div class="li"><div class="lc" style="background:#5a9fd4"></div>Bed (Blue room)</div>
+  <div class="li"><div class="lc" style="background:#5ab85a"></div>Bed (Green room)</div>
+  <div class="li"><div class="lc" style="background:#c8a05a"></div>Desk top</div>
+  <div class="li"><div class="lc" style="background:#e07828"></div>Chair</div>
+  <div class="li"><div class="lc" style="background:#8B5E3C"></div>Dresser / Wardrobe</div>
+  <div class="li"><div class="lc" style="background:#b0bec5"></div>Bathroom (fixed)</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene / Renderer ──────────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 40, 80);
+
+// ── Camera ────────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 200);
+camera.position.set(10, 14, 20);
+
+// ── Lights ────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xd0d8ff, 0.55));
+
+const sun = new THREE.DirectionalLight(0xfff5e0, 0.9);
+sun.position.set(12, 22, 14);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -20;
+sun.shadow.camera.right = 20;
+sun.shadow.camera.top = 20;
+sun.shadow.camera.bottom = -20;
+scene.add(sun);
+
+scene.add(Object.assign(new THREE.DirectionalLight(0x8899cc, 0.3), { position: new THREE.Vector3(-10, 8, -10) }));
+
+// ── Dimensions (1 unit = 1 foot) ──────────────────────────────────────────────
+// Total suite: 11'10" wide × 14'0" deep
+// Left half: 2 bedrooms (stacked top/bottom)
+// Right half: 2 bathrooms (stacked top/bottom)
+const W  = 11.833;   // total width
+const D  = 14.0;     // total depth
+const WH = 8.5;      // wall height
+const HW = 0.18;     // wall/partition thickness
+
+const MID_X = W / 2;   // vertical divider between bedrooms and bathrooms
+const MID_Z = D / 2;   // horizontal divider between top and bottom rooms
+
+// ── Materials ─────────────────────────────────────────────────────────────────
+const M = {
+  floor1:    new THREE.MeshLambertMaterial({ color: 0xd4c3a0 }),          // bedroom carpet
+  floor2:    new THREE.MeshLambertMaterial({ color: 0xa8b8bc }),          // bathroom tile
+  wall:      new THREE.MeshLambertMaterial({ color: 0xeeeae0, side: THREE.DoubleSide }),
+  wallInner: new THREE.MeshLambertMaterial({ color: 0xe0dbd0, side: THREE.DoubleSide }),
+  ceiling:   new THREE.MeshLambertMaterial({ color: 0xf5f4f0, side: THREE.BackSide }),
+  bed1:      new THREE.MeshLambertMaterial({ color: 0x3a6ea8 }),          // frame
+  matt1:     new THREE.MeshLambertMaterial({ color: 0x5a9fd4 }),          // blue mattress
+  matt2:     new THREE.MeshLambertMaterial({ color: 0x5ab85a }),          // green mattress
+  pillow:    new THREE.MeshLambertMaterial({ color: 0xf0f4ff }),
+  deskTop:   new THREE.MeshLambertMaterial({ color: 0xc8a05a }),
+  deskLeg:   new THREE.MeshLambertMaterial({ color: 0x7a5c38 }),
+  monitor:   new THREE.MeshLambertMaterial({ color: 0x1a1a1a }),
+  screen:    new THREE.MeshLambertMaterial({ color: 0x1a4a7a, emissive: 0x0a2040 }),
+  chair:     new THREE.MeshLambertMaterial({ color: 0xe07828 }),
+  chairLeg:  new THREE.MeshLambertMaterial({ color: 0x333333 }),
+  dresser:   new THREE.MeshLambertMaterial({ color: 0x8B5E3C }),
+  handle:    new THREE.MeshLambertMaterial({ color: 0x9e9e9e }),
+  toilet:    new THREE.MeshLambertMaterial({ color: 0xf5f5f5 }),
+  sink:      new THREE.MeshLambertMaterial({ color: 0xeceff1 }),
+  tap:       new THREE.MeshLambertMaterial({ color: 0xbdbdbd }),
+  window:    new THREE.MeshLambertMaterial({ color: 0x90caf9, transparent: true, opacity: 0.45 }),
+  windowFr:  new THREE.MeshLambertMaterial({ color: 0xffffff }),
+  door:      new THREE.MeshLambertMaterial({ color: 0xb08060, side: THREE.DoubleSide }),
+};
+
+// ── Utility: quick box mesh ───────────────────────────────────────────────────
+function mkBox(w, h, d, mat) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+function place(mesh, x, y, z) { mesh.position.set(x, y, z); return mesh; }
+function add(...meshes) { meshes.forEach(m => scene.add(m)); }
+
+// ── FLOORS ────────────────────────────────────────────────────────────────────
+// Bedroom floors (left half)
+add(
+  place(mkBox(MID_X, 0.12, MID_Z, M.floor1),   MID_X/2,    0.06, MID_Z/2),  // top-left
+  place(mkBox(MID_X, 0.12, MID_Z, M.floor1),   MID_X/2,    0.06, MID_Z + MID_Z/2), // bottom-left
+  // Bathroom floors (right half)
+  place(mkBox(W - MID_X, 0.12, MID_Z, M.floor2), MID_X + (W-MID_X)/2, 0.06, MID_Z/2),
+  place(mkBox(W - MID_X, 0.12, MID_Z, M.floor2), MID_X + (W-MID_X)/2, 0.06, MID_Z + MID_Z/2),
+);
+
+// ── WALLS ─────────────────────────────────────────────────────────────────────
+function wall(w, h, d, x, z, mat) {
+  const m = mkBox(w, h, d, mat || M.wall);
+  m.position.set(x, h / 2, z);
+  m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+
+// Outer perimeter
+wall(W,        WH, HW,       W/2,       0,       M.wall);      // north (front)
+wall(W,        WH, HW,       W/2,       D,       M.wall);      // south (back)
+wall(HW,       WH, D,        0,         D/2,     M.wall);      // west
+wall(HW,       WH, D,        W,         D/2,     M.wall);      // east
+
+// Center vertical wall (bedroom | bathroom divider) - with gap for shared door
+// top half
+wall(HW, WH, MID_Z - 1.6,   MID_X,   (MID_Z - 1.6)/2,          M.wallInner); // below door
+wall(HW, WH, 1.8,            MID_X,   MID_Z - 0.8,  M.wallInner); // door header
+// bottom half
+wall(HW, WH, MID_Z - 1.6,   MID_X,   MID_Z + 1.6 + (MID_Z - 1.6)/2, M.wallInner);
+wall(HW, WH, 1.8,            MID_X,   MID_Z + 0.8,  M.wallInner);
+
+// Center horizontal wall (top room | bottom room divider)
+// left side - door cutout at x ≈ 2 to 5
+wall(1.8,  WH, HW,   0.9,         MID_Z, M.wallInner); // left stub
+wall(1.2,  WH, HW,   1.5 + 3.0/2 + 1.2/2 + 0.3, MID_Z, M.wallInner); // stub above door
+wall(MID_X - 3.3 - 1.8, WH, HW, MID_X - (MID_X-3.3-1.8)/2, MID_Z, M.wallInner); // right stub
+// right side (bathrooms share a wall with door cutout)
+wall(W - MID_X, WH, HW, MID_X + (W-MID_X)/2, MID_Z, M.wallInner);
+
+// ── CEILING (translucent so you can see in) ───────────────────────────────────
+const ceilMesh = mkBox(W, 0.12, D, M.ceiling);
+ceilMesh.position.set(W/2, WH, D/2);
+scene.add(ceilMesh);
+
+// ── WINDOWS (north wall of each bedroom) ─────────────────────────────────────
+// Each bedroom top: window 4'11" wide centred in the left half
+function addWindow(cx, z) {
+  const fw = mkBox(4.916, 3.5, HW + 0.05, M.windowFr);
+  fw.position.set(cx, WH/2 + 0.5, z);
+  scene.add(fw);
+  const gl = mkBox(4.7, 3.2, HW + 0.05, M.window);
+  gl.position.set(cx, WH/2 + 0.5, z);
+  scene.add(gl);
+}
+addWindow(MID_X / 2, 0.08);   // top bedroom north wall
+addWindow(MID_X / 2, D - 0.08); // bottom bedroom south wall
+
+// ── DOORS (visual only - open position) ──────────────────────────────────────
+function addDoor(x, z, ry) {
+  const d = mkBox(3.0, 7.0, 0.1, M.door);
+  d.rotation.y = ry;
+  d.position.set(x, 3.5, z);
+  scene.add(d);
+}
+// Bedroom-to-bathroom passage doors
+addDoor(MID_X - 0.1, MID_Z / 2 + 0.3, -Math.PI / 2 * 0.85);
+addDoor(MID_X - 0.1, MID_Z + MID_Z / 2 - 0.3, Math.PI / 2 * 0.85);
+
+// ── GRID (floor level) ────────────────────────────────────────────────────────
+const grid = new THREE.GridHelper(30, 30, 0x2a3a5a, 0x222c42);
+grid.position.set(W/2, 0.13, D/2);
+scene.add(grid);
+
+// ── DRAGGABLE FURNITURE ───────────────────────────────────────────────────────
+const draggables = [];
+
+function makeFurniture(label, buildFn, px, pz) {
+  const g = new THREE.Group();
+  g.name = label;
+  buildFn(g);
+  g.position.set(px, 0.12, pz);
+  scene.add(g);
+  draggables.push(g);
+  return g;
+}
+
+// ─── Bed ──────────────────────────────────────────────────────────────────────
+function buildBed(mattMat) {
+  return (g) => {
+    // Frame
+    const frame = mkBox(3.3, 0.72, 6.6, M.bed1);
+    frame.position.set(0, 0.36, 0);
+    // Mattress
+    const matt = mkBox(3.0, 0.35, 6.1, mattMat);
+    matt.position.set(0, 0.9, 0);
+    // Pillow
+    const p1 = mkBox(1.1, 0.2, 0.85, M.pillow);
+    p1.position.set(-0.7, 1.1, -2.55);
+    const p2 = mkBox(1.1, 0.2, 0.85, M.pillow);
+    p2.position.set(0.7, 1.1, -2.55);
+    // Headboard
+    const hb = mkBox(3.3, 1.8, 0.22, M.bed1);
+    hb.position.set(0, 1.3, -3.4);
+    // Footboard
+    const fb = mkBox(3.3, 0.9, 0.18, M.bed1);
+    fb.position.set(0, 0.7, 3.4);
+    g.add(frame, matt, p1, p2, hb, fb);
+  };
+}
+
+// ─── Desk ─────────────────────────────────────────────────────────────────────
+function buildDesk(g) {
+  const top = mkBox(4.2, 0.18, 1.9, M.deskTop);
+  top.position.set(0, 2.6, 0);
+  const legH = 2.6;
+  [[1.95, -0.85], [-1.95, -0.85], [1.95, 0.85], [-1.95, 0.85]].forEach(([x, z]) => {
+    const leg = mkBox(0.14, legH, 0.14, M.deskLeg);
+    leg.position.set(x, legH/2, z);
+    g.add(leg);
+  });
+  // Monitor
+  const mon = mkBox(1.6, 1.0, 0.1, M.monitor);
+  mon.position.set(0, 3.3, -0.8);
+  const scr = mkBox(1.4, 0.85, 0.09, M.screen);
+  scr.position.set(0, 3.32, -0.79);
+  const base = mkBox(0.55, 0.1, 0.44, M.monitor);
+  base.position.set(0, 2.69, -0.75);
+  const neck = mkBox(0.08, 0.55, 0.08, M.monitor);
+  neck.position.set(0, 2.95, -0.8);
+  // Keyboard
+  const kb = mkBox(1.2, 0.06, 0.5, new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+  kb.position.set(0, 2.7, 0.3);
+  g.add(top, mon, scr, base, neck, kb);
+}
+
+// ─── Chair ────────────────────────────────────────────────────────────────────
+function buildChair(g) {
+  const seat = mkBox(1.6, 0.16, 1.6, M.chair);
+  seat.position.set(0, 1.5, 0);
+  const back = mkBox(1.6, 1.6, 0.14, M.chair);
+  back.position.set(0, 2.4, -0.73);
+  [[0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]].forEach(([x, z]) => {
+    const leg = mkBox(0.1, 1.5, 0.1, M.chairLeg);
+    leg.position.set(x, 0.75, z);
+    g.add(leg);
+  });
+  g.add(seat, back);
+}
+
+// ─── Dresser ──────────────────────────────────────────────────────────────────
+function buildDresser(g) {
+  const body = mkBox(3.2, 3.8, 1.6, M.dresser);
+  body.position.set(0, 1.9, 0);
+  [0.7, 1.9, 3.1].forEach(y => {
+    const div = mkBox(3.1, 0.06, 1.58, new THREE.MeshLambertMaterial({ color: 0x6a4020 }));
+    div.position.set(0, y, 0.01);
+    g.add(div);
+    const h = mkBox(0.5, 0.1, 0.1, M.handle);
+    h.position.set(0, y + 0.4, 0.82);
+    g.add(h);
+  });
+  g.add(body);
+}
+
+// ─── Wardrobe ─────────────────────────────────────────────────────────────────
+function buildWardrobe(g) {
+  const body = mkBox(3.5, 6.5, 1.8, M.dresser);
+  body.position.set(0, 3.25, 0);
+  const divV = mkBox(0.06, 6.4, 1.78, new THREE.MeshLambertMaterial({ color: 0x6a4020 }));
+  divV.position.set(0, 3.25, 0);
+  const hL = mkBox(0.4, 0.08, 0.1, M.handle);
+  hL.position.set(-0.5, 3.25, 0.92);
+  const hR = mkBox(0.4, 0.08, 0.1, M.handle);
+  hR.position.set(0.5, 3.25, 0.92);
+  g.add(body, divV, hL, hR);
+}
+
+// ── Place bedroom furniture ───────────────────────────────────────────────────
+// Bedroom 1 (top-left): x in [0, MID_X], z in [0, MID_Z]
+makeFurniture('Bed 1 (Blue)',   buildBed(M.matt1), 2.0, 3.8);
+makeFurniture('Bed 2 (Blue)',   buildBed(M.matt1), 4.9, 3.8);
+makeFurniture('Desk 1',        buildDesk,          1.8, 0.9);
+makeFurniture('Desk 2',        buildDesk,          4.9, 0.9);
+makeFurniture('Chair 1',       buildChair,         1.8, 2.2);
+makeFurniture('Chair 2',       buildChair,         4.9, 2.2);
+makeFurniture('Dresser 1',     buildDresser,       1.5, 6.6);
+makeFurniture('Wardrobe 1',    buildWardrobe,      4.7, 6.6);
+
+// Bedroom 2 (bottom-left): x in [0, MID_X], z in [MID_Z, D]
+makeFurniture('Bed 3 (Green)', buildBed(M.matt2), 2.0, 10.2);
+makeFurniture('Bed 4 (Green)', buildBed(M.matt2), 4.9, 10.2);
+makeFurniture('Desk 3',        buildDesk,          1.8, 13.1);
+makeFurniture('Desk 4',        buildDesk,          4.9, 13.1);
+makeFurniture('Chair 3',       buildChair,         1.8, 11.8);
+makeFurniture('Chair 4',       buildChair,         4.9, 11.8);
+makeFurniture('Dresser 2',     buildDresser,       1.5, 7.4);
+makeFurniture('Wardrobe 2',    buildWardrobe,      4.7, 7.4);
+
+// ── Bathroom fixtures (non-draggable) ────────────────────────────────────────
+function addToilet(cx, cz) {
+  const tank = mkBox(1.5, 1.4, 0.6,  M.toilet);
+  tank.position.set(cx, 1.1, cz);
+  const bowl = mkBox(1.4, 0.85, 1.3, M.toilet);
+  bowl.position.set(cx, 0.65, cz + 0.55);
+  const seat = mkBox(1.2, 0.1, 1.1,  new THREE.MeshLambertMaterial({ color: 0xfafafa }));
+  seat.position.set(cx, 1.08, cz + 0.55);
+  scene.add(tank, bowl, seat);
+}
+
+function addSink(cx, cz) {
+  const ped  = mkBox(0.6, 2.5, 0.6, M.sink);
+  ped.position.set(cx, 1.25, cz);
+  const bowl = mkBox(1.8, 0.28, 1.2, M.sink);
+  bowl.position.set(cx, 2.64, cz);
+  const faucet = mkBox(0.1, 0.55, 0.5, M.tap);
+  faucet.position.set(cx, 3.0, cz - 0.3);
+  scene.add(ped, bowl, faucet);
+}
+
+function addShower(cx, cz) {
+  const tray = mkBox(2.5, 0.2, 2.5, new THREE.MeshLambertMaterial({ color: 0xb0bec5 }));
+  tray.position.set(cx, 0.22, cz);
+  const wallA = mkBox(0.1, 4.5, 2.5, new THREE.MeshLambertMaterial({ color: 0xcfd8dc, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  wallA.position.set(cx - 1.25, 2.35, cz);
+  const wallB = mkBox(2.5, 4.5, 0.1, new THREE.MeshLambertMaterial({ color: 0xcfd8dc, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  wallB.position.set(cx, 2.35, cz + 1.25);
+  scene.add(tray, wallA, wallB);
+}
+
+// Bathroom 1 (top-right): x in [MID_X, W], z in [0, MID_Z]
+const bx = MID_X + (W - MID_X) / 2;
+addToilet(MID_X + 1.0, 1.2);
+addSink(bx,             1.5);
+addShower(W - 1.5,      MID_Z - 1.8);
+
+// Bathroom 2 (bottom-right)
+addToilet(MID_X + 1.0, D - 1.2);
+addSink(bx,             D - 1.5);
+addShower(W - 1.5,      MID_Z + 1.8);
+
+// ── Orbit Controls ────────────────────────────────────────────────────────────
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+orbit.dampingFactor = 0.06;
+orbit.target.set(W/2, 1, D/2);
+orbit.update();
+
+// ── Selection & Drag ─────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse2    = new THREE.Vector2();
+const infoBar   = document.getElementById('info-bar');
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.12);
+const dragOffset = new THREE.Vector3();
+
+let selected  = null;
+let dragging  = false;
+let shiftDown = false;
+
+const HIGHLIGHT = new THREE.Color(0x4488cc);
+
+function getGroups(event) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse2.x =  ((event.clientX - r.left) / r.width)  * 2 - 1;
+  mouse2.y = -((event.clientY - r.top)  / r.height)  * 2 + 1;
+  raycaster.setFromCamera(mouse2, camera);
+  const hits = raycaster.intersectObjects(scene.children, true);
+  for (const h of hits) {
+    let obj = h.object;
+    while (obj.parent && !draggables.includes(obj)) obj = obj.parent;
+    if (draggables.includes(obj)) return { group: obj, point: h.point };
+  }
+  return null;
+}
+
+function highlight(group, on) {
+  group.traverse(c => {
+    if (!c.isMesh) return;
+    if (on) {
+      if (!c.__origEmissive) c.__origEmissive = c.material.emissive.clone();
+      c.material = c.material.clone();
+      c.material.emissive.set(HIGHLIGHT);
+      c.material.emissiveIntensity = 0.25;
+    } else if (c.__origEmissive) {
+      c.material.emissive.copy(c.__origEmissive);
+      c.material.emissiveIntensity = 0;
+      delete c.__origEmissive;
+    }
+  });
+}
+
+function deselect() {
+  if (selected) { highlight(selected, false); selected = null; }
+  infoBar.style.display = 'none';
+}
+
+renderer.domElement.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const hit = getGroups(e);
+  if (hit) {
+    if (selected && selected !== hit.group) deselect();
+    selected = hit.group;
+    highlight(selected, true);
+    infoBar.textContent = `${selected.name}  |  Arrow keys: move  |  Q/E: rotate  |  Shift+drag: free move  |  Esc: deselect`;
+    infoBar.style.display = 'block';
+    if (shiftDown) {
+      orbit.enabled = false;
+      dragging = true;
+      const ip = new THREE.Vector3();
+      raycaster.ray.intersectPlane(dragPlane, ip);
+      dragOffset.copy(ip).sub(selected.position);
+    }
+  } else {
+    deselect();
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', e => {
+  if (!dragging || !selected) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse2.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+  mouse2.y = -((e.clientY - r.top)  / r.height)  * 2 + 1;
+  raycaster.setFromCamera(mouse2, camera);
+  const ip = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(dragPlane, ip)) {
+    selected.position.x = ip.x - dragOffset.x;
+    selected.position.z = ip.z - dragOffset.z;
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', () => {
+  if (dragging) { dragging = false; orbit.enabled = true; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Shift') { shiftDown = true; return; }
+  if (!selected) return;
+  const step = e.shiftKey ? 0.1 : 0.5;
+  switch (e.key) {
+    case 'ArrowLeft':  selected.position.x -= step; break;
+    case 'ArrowRight': selected.position.x += step; break;
+    case 'ArrowUp':    selected.position.z -= step; break;
+    case 'ArrowDown':  selected.position.z += step; break;
+    case 'q': case 'Q': selected.rotation.y -= Math.PI / 8; break;
+    case 'e': case 'E': selected.rotation.y += Math.PI / 8; break;
+    case 'Escape': deselect(); break;
+  }
+});
+
+document.addEventListener('keyup', e => { if (e.key === 'Shift') shiftDown = false; });
+
+// ── View presets ──────────────────────────────────────────────────────────────
+window.setView = (v) => {
+  const t = new THREE.Vector3(W/2, 0, D/2);
+  orbit.target.copy(t);
+  switch (v) {
+    case 'top':   camera.position.set(W/2, 30, D/2 + 0.01); break;
+    case 'iso':   camera.position.set(W/2 + 11, 13, D/2 + 16); break;
+    case 'front': camera.position.set(W/2, 5, -14); break;
+    case 'side':  camera.position.set(-14, 5, D/2); break;
+  }
+  camera.lookAt(t);
+  orbit.update();
+};
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  orbit.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>
