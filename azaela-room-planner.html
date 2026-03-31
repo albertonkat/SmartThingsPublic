@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Azaela Room 3D Planner</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{overflow:hidden;background:#1a1a2e;font-family:Arial,sans-serif;}
+    #c{width:100vw;height:100vh;display:block;}
+    #panel{position:fixed;top:10px;right:10px;background:rgba(10,15,35,.92);color:#c8d8ff;
+      padding:12px 14px;border-radius:12px;z-index:10;min-width:160px;border:1px solid #2a4070;font-size:12px;}
+    #panel h2{color:#64b5f6;font-size:13px;margin-bottom:7px;}
+    .h{color:#8899bb;margin:2px 0;} .h b{color:#aac4f0;}
+    #views{margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+    button{padding:6px 4px;background:#1a2a4a;color:#c0d8ff;border:1px solid #2a5080;
+      border-radius:6px;cursor:pointer;font-size:11px;}
+    button:hover,button:active{background:#2a4a7a;}
+    #bar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+      background:rgba(10,15,35,.92);color:#aac4f0;padding:6px 16px;border-radius:20px;
+      font-size:11px;border:1px solid #2a4070;display:none;max-width:94vw;text-align:center;}
+    #legend{position:fixed;bottom:12px;left:10px;background:rgba(10,15,35,.92);
+      color:#c0d0f0;padding:9px 12px;border-radius:10px;font-size:10px;border:1px solid #2a4070;}
+    #legend h3{color:#64b5f6;font-size:10px;margin-bottom:5px;}
+    .li{display:flex;align-items:center;margin:3px 0;}
+    .lc{width:11px;height:11px;border-radius:2px;margin-right:7px;flex-shrink:0;}
+    #loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;color:#64b5f6;font-size:18px;gap:12px;}
+    #loading p{font-size:12px;color:#556;}
+    #err{display:none;color:#f66;font-size:13px;text-align:center;padding:0 20px;}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">
+  <div>Loading 3D Room…</div>
+  <div id="err"></div>
+  <p>Requires internet connection to download 3D library</p>
+</div>
+<div id="panel" style="display:none">
+  <h2>Azaela Room Planner</h2>
+  <div class="h"><b>Drag</b> – rotate view</div>
+  <div class="h"><b>Pinch</b> – zoom</div>
+  <div class="h"><b>2-finger drag</b> – pan</div>
+  <div class="h"><b>Tap</b> furniture to select</div>
+  <div class="h"><b>Arrow keys</b> – move</div>
+  <div class="h"><b>Q / E</b> – rotate piece</div>
+  <div id="views">
+    <button onclick="setView('iso')">Isometric</button>
+    <button onclick="setView('top')">Top (2D)</button>
+    <button onclick="setView('front')">Front</button>
+    <button onclick="setView('side')">Side</button>
+  </div>
+</div>
+<div id="bar"></div>
+<div id="legend" style="display:none">
+  <h3>Rooms</h3>
+  <div class="li"><div class="lc" style="background:#5a9fd4"></div>Bedroom 1 (Blue)</div>
+  <div class="li"><div class="lc" style="background:#5ab85a"></div>Bedroom 2 (Green)</div>
+  <div class="li"><div class="lc" style="background:#b0bec5"></div>Bathrooms</div>
+</div>
+
+<!-- Three.js r134 — last version with examples/js (non-module) controls -->
+<script src="https://unpkg.com/three@0.134.0/build/three.min.js"
+  onerror="document.getElementById('err').textContent='Failed to load Three.js. Check internet connection.';document.getElementById('err').style.display='block';"></script>
+<script src="https://unpkg.com/three@0.134.0/examples/js/controls/OrbitControls.js"
+  onerror="document.getElementById('err').textContent='Failed to load OrbitControls.';document.getElementById('err').style.display='block';"></script>
+
+<script>
+window.addEventListener('load', function() {
+  if (typeof THREE === 'undefined') {
+    document.getElementById('err').textContent = 'THREE.js not loaded. Check your internet connection.';
+    document.getElementById('err').style.display = 'block';
+    return;
+  }
+
+  // ── Renderer ──────────────────────────────────────────────────────────────
+  var canvas = document.getElementById('c');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+
+  var camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(10, 14, 20);
+
+  // ── Lights ────────────────────────────────────────────────────────────────
+  scene.add(new THREE.AmbientLight(0xd0d8ff, 0.6));
+  var sun = new THREE.DirectionalLight(0xfff5e0, 0.9);
+  sun.position.set(12, 22, 14);
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = 1024;
+  sun.shadow.mapSize.height = 1024;
+  sun.shadow.camera.left = -20; sun.shadow.camera.right = 20;
+  sun.shadow.camera.top = 20;   sun.shadow.camera.bottom = -20;
+  scene.add(sun);
+  var fill = new THREE.DirectionalLight(0x8899cc, 0.3);
+  fill.position.set(-10, 8, -10);
+  scene.add(fill);
+
+  // ── Room dimensions (1 unit = 1 foot) ────────────────────────────────────
+  var W = 11.833, D = 14.0, WH = 8.5, HW = 0.18;
+  var MX = W / 2, MZ = D / 2;
+
+  // ── Materials ─────────────────────────────────────────────────────────────
+  function lm(hex, extra) {
+    var m = new THREE.MeshLambertMaterial({ color: hex });
+    if (extra) Object.assign(m, extra);
+    return m;
+  }
+  var M = {
+    fl1: lm(0xd4c3a0), fl2: lm(0xa8b8bc),
+    wall: lm(0xeeeae0, { side: THREE.DoubleSide }),
+    win:  lm(0x90caf9, { transparent: true, opacity: 0.45, side: THREE.DoubleSide }),
+    bedFr: lm(0x3a6ea8), matt1: lm(0x5a9fd4), matt2: lm(0x5ab85a),
+    pillow: lm(0xf0f4ff),
+    deskT: lm(0xc8a05a), deskL: lm(0x7a5c38),
+    mon:  lm(0x1a1a1a), scr: lm(0x1a4a7a, { emissive: new THREE.Color(0x0a2040) }),
+    chair: lm(0xe07828), cleg: lm(0x333333),
+    dres:  lm(0x8B5E3C), hdl: lm(0x9e9e9e),
+    toilet: lm(0xf5f5f5), sink: lm(0xeceff1), tap: lm(0xbdbdbd),
+    shower: lm(0xcfd8dc, { transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function bx(w, h, d, m, x, y, z) {
+    var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    mesh.position.set(x || 0, y || 0, z || 0);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    return mesh;
+  }
+  function wall(w, h, d, x, z, m) {
+    var b = bx(w, h, d, m || M.wall, x, h / 2, z);
+    b.receiveShadow = true; scene.add(b);
+  }
+
+  // ── Floors ────────────────────────────────────────────────────────────────
+  scene.add(bx(MX, 0.12, MZ,   M.fl1, MX/2,          0.06, MZ/2));
+  scene.add(bx(MX, 0.12, MZ,   M.fl1, MX/2,          0.06, MZ + MZ/2));
+  scene.add(bx(W-MX, 0.12, MZ, M.fl2, MX+(W-MX)/2,   0.06, MZ/2));
+  scene.add(bx(W-MX, 0.12, MZ, M.fl2, MX+(W-MX)/2,   0.06, MZ + MZ/2));
+
+  // ── Walls ─────────────────────────────────────────────────────────────────
+  wall(W, WH, HW,   W/2, 0);       // north
+  wall(W, WH, HW,   W/2, D);       // south
+  wall(HW, WH, D,   0,   D/2);     // west
+  wall(HW, WH, D,   W,   D/2);     // east
+  // Center vertical — bedroom | bathroom (with door gaps)
+  wall(HW, WH, MZ-1.6,   MX, (MZ-1.6)/2);
+  wall(HW, WH, 1.8,       MX, MZ-0.8);
+  wall(HW, WH, MZ-1.6,   MX, MZ+1.6+(MZ-1.6)/2);
+  wall(HW, WH, 1.8,       MX, MZ+0.8);
+  // Center horizontal left — top | bottom bedroom (door gap)
+  wall(1.8,    WH, HW,   0.9,                   MZ);
+  wall(1.4,    WH, HW,   1.5+1.5+0.7,           MZ);
+  wall(MX-5.1, WH, HW,   MX-(MX-5.1)/2,         MZ);
+  // Center horizontal right — top | bottom bathroom
+  wall(W-MX, WH, HW,   MX+(W-MX)/2, MZ);
+
+  // ── Windows ───────────────────────────────────────────────────────────────
+  scene.add(bx(4.9, 3.5, HW+0.05, lm(0xffffff), MX/2, WH/2+0.5, 0.07));
+  scene.add(bx(4.7, 3.2, HW+0.05, M.win,         MX/2, WH/2+0.5, 0.07));
+  scene.add(bx(4.9, 3.5, HW+0.05, lm(0xffffff), MX/2, WH/2+0.5, D-0.07));
+  scene.add(bx(4.7, 3.2, HW+0.05, M.win,         MX/2, WH/2+0.5, D-0.07));
+
+  // ── Grid ──────────────────────────────────────────────────────────────────
+  var grid = new THREE.GridHelper(30, 30, 0x2a3a5a, 0x222c42);
+  grid.position.set(W/2, 0.13, D/2);
+  scene.add(grid);
+
+  // ── Draggable furniture ───────────────────────────────────────────────────
+  var draggables = [];
+  function furniture(name, buildFn, px, pz) {
+    var g = new THREE.Group(); g.name = name;
+    buildFn(g);
+    g.position.set(px, 0.12, pz);
+    scene.add(g); draggables.push(g); return g;
+  }
+
+  function bed(mattMat) { return function(g) {
+    g.add(bx(3.3, 0.72, 6.6, M.bedFr,  0, 0.36,  0));
+    g.add(bx(3.0, 0.35, 6.1, mattMat,  0, 0.9,   0));
+    g.add(bx(1.1, 0.2,  0.85, M.pillow,-0.7, 1.1,-2.55));
+    g.add(bx(1.1, 0.2,  0.85, M.pillow, 0.7, 1.1,-2.55));
+    g.add(bx(3.3, 1.8,  0.22, M.bedFr,  0, 1.3,  -3.4));
+    g.add(bx(3.3, 0.9,  0.18, M.bedFr,  0, 0.7,   3.4));
+  }; }
+
+  function desk(g) {
+    g.add(bx(4.2, 0.18, 1.9, M.deskT, 0, 2.6, 0));
+    [[1.95,-0.85],[-1.95,-0.85],[1.95,0.85],[-1.95,0.85]].forEach(function(p) {
+      g.add(bx(0.14, 2.6, 0.14, M.deskL, p[0], 1.3, p[1]));
+    });
+    g.add(bx(1.6,  1.0,  0.1,  M.mon,  0, 3.3,  -0.8));
+    g.add(bx(1.4,  0.85, 0.09, M.scr,  0, 3.32, -0.79));
+    g.add(bx(0.55, 0.1,  0.44, M.mon,  0, 2.69, -0.75));
+    g.add(bx(0.08, 0.55, 0.08, M.mon,  0, 2.95, -0.8));
+    g.add(bx(1.2,  0.06, 0.5,  lm(0x2a2a2a), 0, 2.7, 0.3));
+  }
+
+  function chair(g) {
+    g.add(bx(1.6, 0.16, 1.6, M.chair, 0, 1.5, 0));
+    g.add(bx(1.6, 1.6,  0.14, M.chair, 0, 2.4, -0.73));
+    [[0.7,0.7],[-0.7,0.7],[0.7,-0.7],[-0.7,-0.7]].forEach(function(p) {
+      g.add(bx(0.1, 1.5, 0.1, M.cleg, p[0], 0.75, p[1]));
+    });
+  }
+
+  function dresser(g) {
+    g.add(bx(3.2, 3.8, 1.6, M.dres, 0, 1.9, 0));
+    [0.7, 1.9, 3.1].forEach(function(y) {
+      g.add(bx(3.1, 0.06, 1.58, lm(0x6a4020), 0, y, 0.01));
+      g.add(bx(0.5, 0.1,  0.1,  M.hdl,        0, y+0.4, 0.82));
+    });
+  }
+
+  function wardrobe(g) {
+    g.add(bx(3.5, 6.5, 1.8,  M.dres,      0, 3.25, 0));
+    g.add(bx(0.06,6.4, 1.78, lm(0x6a4020),0, 3.25, 0));
+    g.add(bx(0.4, 0.08,0.1,  M.hdl,      -0.5, 3.25, 0.92));
+    g.add(bx(0.4, 0.08,0.1,  M.hdl,       0.5, 3.25, 0.92));
+  }
+
+  // Bedroom 1 (top-left)
+  furniture('Bed 1 (Blue)',  bed(M.matt1), 2.0, 3.8);
+  furniture('Bed 2 (Blue)',  bed(M.matt1), 4.9, 3.8);
+  furniture('Desk 1',        desk,         1.8, 0.9);
+  furniture('Desk 2',        desk,         4.9, 0.9);
+  furniture('Chair 1',       chair,        1.8, 2.2);
+  furniture('Chair 2',       chair,        4.9, 2.2);
+  furniture('Dresser 1',     dresser,      1.5, 6.5);
+  furniture('Wardrobe 1',    wardrobe,     4.7, 6.5);
+
+  // Bedroom 2 (bottom-left)
+  furniture('Bed 3 (Green)', bed(M.matt2), 2.0, 10.2);
+  furniture('Bed 4 (Green)', bed(M.matt2), 4.9, 10.2);
+  furniture('Desk 3',        desk,         1.8, 13.1);
+  furniture('Desk 4',        desk,         4.9, 13.1);
+  furniture('Chair 3',       chair,        1.8, 11.8);
+  furniture('Chair 4',       chair,        4.9, 11.8);
+  furniture('Dresser 2',     dresser,      1.5, 7.4);
+  furniture('Wardrobe 2',    wardrobe,     4.7, 7.4);
+
+  // ── Bathroom fixtures ─────────────────────────────────────────────────────
+  function toilet(cx, cz) {
+    scene.add(bx(1.5,1.4,0.6,  M.toilet,   cx,1.1,cz));
+    scene.add(bx(1.4,0.85,1.3, M.toilet,   cx,0.65,cz+0.55));
+    scene.add(bx(1.2,0.1,1.1,  lm(0xfafafa),cx,1.08,cz+0.55));
+  }
+  function sink(cx, cz) {
+    scene.add(bx(0.6,2.5,0.6,  M.sink, cx,1.25,cz));
+    scene.add(bx(1.8,0.28,1.2, M.sink, cx,2.64,cz));
+    scene.add(bx(0.1,0.55,0.5, M.tap,  cx,3.0,cz-0.3));
+  }
+  function shower(cx, cz) {
+    scene.add(bx(2.5,0.2,2.5,  lm(0xa8b8bc), cx,0.22,cz));
+    scene.add(bx(0.1,4.5,2.5,  M.shower,     cx-1.25,2.35,cz));
+    scene.add(bx(2.5,4.5,0.1,  M.shower,     cx,2.35,cz+1.25));
+  }
+  toilet(MX+1.0, 1.2);  sink(MX+(W-MX)/2, 1.5);  shower(W-1.5, MZ-1.8);
+  toilet(MX+1.0, D-1.2);sink(MX+(W-MX)/2, D-1.5); shower(W-1.5, MZ+1.8);
+
+  // ── Orbit Controls ────────────────────────────────────────────────────────
+  var orbit = new THREE.OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+  orbit.dampingFactor = 0.06;
+  orbit.target.set(W/2, 1, D/2);
+  orbit.update();
+
+  // Hide loading, show UI
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('panel').style.display   = 'block';
+  document.getElementById('legend').style.display  = 'block';
+
+  // ── Selection & drag ──────────────────────────────────────────────────────
+  var ray = new THREE.Raycaster();
+  var mp  = new THREE.Vector2();
+  var selected = null, dragging = false, shiftDown = false;
+  var dragPlane  = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.12);
+  var dragOffset = new THREE.Vector3();
+  var bar = document.getElementById('bar');
+  var GLOW = new THREE.Color(0x4488cc);
+
+  function getHit(ex, ey) {
+    var r = canvas.getBoundingClientRect();
+    mp.x =  ((ex - r.left) / r.width)  * 2 - 1;
+    mp.y = -((ey - r.top)  / r.height) * 2 + 1;
+    ray.setFromCamera(mp, camera);
+    var hits = ray.intersectObjects(scene.children, true);
+    for (var i = 0; i < hits.length; i++) {
+      var o = hits[i].object;
+      while (o.parent && draggables.indexOf(o) === -1) o = o.parent;
+      if (draggables.indexOf(o) !== -1) return { group: o, point: hits[i].point };
+    }
+    return null;
+  }
+
+  function glow(g, on) {
+    g.traverse(function(c) {
+      if (!c.isMesh) return;
+      if (on) {
+        if (!c.__oe) c.__oe = c.material.emissive.clone();
+        c.material = c.material.clone();
+        c.material.emissive.set(GLOW);
+        c.material.emissiveIntensity = 0.3;
+      } else if (c.__oe) {
+        c.material.emissive.copy(c.__oe);
+        c.material.emissiveIntensity = 0;
+        delete c.__oe;
+      }
+    });
+  }
+
+  function deselect() {
+    if (selected) { glow(selected, false); selected = null; }
+    bar.style.display = 'none';
+  }
+
+  function onDown(ex, ey) {
+    var hit = getHit(ex, ey);
+    if (hit) {
+      if (selected && selected !== hit.group) deselect();
+      selected = hit.group;
+      glow(selected, true);
+      bar.textContent = selected.name + '  |  Arrow keys: move  |  Q/E: rotate  |  Esc: deselect';
+      bar.style.display = 'block';
+      if (shiftDown) {
+        orbit.enabled = false; dragging = true;
+        var ip = new THREE.Vector3();
+        ray.ray.intersectPlane(dragPlane, ip);
+        dragOffset.copy(ip).sub(selected.position);
+      }
+    } else { deselect(); }
+  }
+
+  function onMove(ex, ey) {
+    if (!dragging || !selected) return;
+    var r = canvas.getBoundingClientRect();
+    mp.x =  ((ex - r.left) / r.width)  * 2 - 1;
+    mp.y = -((ey - r.top)  / r.height) * 2 + 1;
+    ray.setFromCamera(mp, camera);
+    var ip = new THREE.Vector3();
+    if (ray.ray.intersectPlane(dragPlane, ip)) {
+      selected.position.x = ip.x - dragOffset.x;
+      selected.position.z = ip.z - dragOffset.z;
+    }
+  }
+
+  canvas.addEventListener('mousedown',  function(e){ if (e.button === 0) onDown(e.clientX, e.clientY); });
+  canvas.addEventListener('mousemove',  function(e){ onMove(e.clientX, e.clientY); });
+  canvas.addEventListener('mouseup',    function(){ if (dragging){ dragging=false; orbit.enabled=true; }});
+  canvas.addEventListener('touchstart', function(e){ if (e.touches.length===1) onDown(e.touches[0].clientX, e.touches[0].clientY); }, { passive:true });
+  canvas.addEventListener('touchmove',  function(e){ if (e.touches.length===1) onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive:true });
+  canvas.addEventListener('touchend',   function(){ if (dragging){ dragging=false; orbit.enabled=true; }});
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Shift') { shiftDown = true; return; }
+    if (!selected) return;
+    var s = 0.5;
+    if (e.key==='ArrowLeft')  selected.position.x -= s;
+    if (e.key==='ArrowRight') selected.position.x += s;
+    if (e.key==='ArrowUp')    selected.position.z -= s;
+    if (e.key==='ArrowDown')  selected.position.z += s;
+    if (e.key==='q'||e.key==='Q') selected.rotation.y -= Math.PI/8;
+    if (e.key==='e'||e.key==='E') selected.rotation.y += Math.PI/8;
+    if (e.key==='Escape') deselect();
+  });
+  document.addEventListener('keyup', function(e){ if (e.key==='Shift') shiftDown=false; });
+
+  // ── View presets ──────────────────────────────────────────────────────────
+  window.setView = function(v) {
+    var t = new THREE.Vector3(W/2, 0, D/2);
+    orbit.target.copy(t);
+    if (v==='top')   camera.position.set(W/2, 30, D/2 + 0.01);
+    if (v==='iso')   camera.position.set(W/2+11, 13, D/2+16);
+    if (v==='front') camera.position.set(W/2, 5, -14);
+    if (v==='side')  camera.position.set(-14, 5, D/2);
+    camera.lookAt(t); orbit.update();
+  };
+
+  // ── Resize ────────────────────────────────────────────────────────────────
+  window.addEventListener('resize', function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ── Render loop ───────────────────────────────────────────────────────────
+  (function animate() {
+    requestAnimationFrame(animate);
+    orbit.update();
+    renderer.render(scene, camera);
+  })();
+});
+</script>
+</body>
+</html>
