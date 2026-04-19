@@ -1,0 +1,4 @@
+name: Outlook Mail Monitor
+packageKey: outlook-mail-monitor
+platforms:
+  - hub
