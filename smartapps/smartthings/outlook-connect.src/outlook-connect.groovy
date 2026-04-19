@@ -32,6 +32,7 @@ definition(
 ) {
     appSetting "clientId"
     appSetting "clientSecret"
+    appSetting "tenantId"
 }
 
 preferences {
@@ -447,6 +448,6 @@ def getServerUrl()      { return "https://graph.api.smartthings.com" }
 def getShardUrl()       { return getApiServerUrl() }
 def getCallbackUrl()    { return "https://graph.api.smartthings.com/oauth/callback" }
 def getBuildRedirectUrl() { return "${serverUrl}/oauth/initialize?appId=${app.id}&access_token=${atomicState.accessToken}&apiServerUrl=${shardUrl}" }
-def getApiEndpoint()    { return "https://login.microsoftonline.com/common/oauth2/v2.0" }
-def getTokenEndpoint()  { return "https://login.microsoftonline.com/common/oauth2/v2.0/token" }
+def getApiEndpoint()    { return "https://login.microsoftonline.com/${appSettings.tenantId}/oauth2/v2.0" }
+def getTokenEndpoint()  { return "https://login.microsoftonline.com/${appSettings.tenantId}/oauth2/v2.0/token" }
 def getGraphEndpoint()  { return "https://graph.microsoft.com/v1.0" }
