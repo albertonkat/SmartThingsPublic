@@ -1,0 +1,12 @@
+name: outlook-inbox
+components:
+  - id: main
+    capabilities:
+      - id: contactSensor
+        version: 1
+      - id: sensor
+        version: 1
+      - id: refresh
+        version: 1
+    categories:
+      - name: Other
