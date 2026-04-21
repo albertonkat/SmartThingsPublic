@@ -1,0 +1,11 @@
+{
+  "defaultViewMode": "preview",
+  "foldHeading": true,
+  "foldIndent": true,
+  "showLineNumber": false,
+  "readableLineLength": true,
+  "strictLineBreaks": false,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "00-Inbox",
+  "attachmentFolderPath": "03-Resources/Attachments"
+}
