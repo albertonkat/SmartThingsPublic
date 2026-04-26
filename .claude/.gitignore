@@ -1,0 +1,6 @@
+# Per-session scratch — not shared
+MEMORY.md
+
+# Share consolidated memories and the index
+!agent-memory/
+!agent-memory/**
