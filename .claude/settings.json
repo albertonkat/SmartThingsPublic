@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/auto-dream.sh"
+          },
+          {
+            "type": "command",
+            "command": "echo '\n[memory] Session ended. Run `.claude/hooks/feedback-extract.sh` to capture corrections and preferences into FEEDBACK.md.'"
           }
         ]
       }

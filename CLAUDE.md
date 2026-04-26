@@ -49,7 +49,31 @@ For just-in-time retrieval. Call it when you need context without loading everyt
 .claude/hooks/memory-tool.sh list
 ```
 
+### Session Feedback (`.claude/FEEDBACK.md`)
+
+**At session start:** Read `.claude/FEEDBACK.md` in full. Apply every correction,
+preference, and "do differently" listed there — these are lessons extracted from real
+past sessions and must carry forward.
+
+**At session end (when asked):** Run the extraction prompt below, then append the
+formatted output to `.claude/FEEDBACK.md` using the append script:
+
+```bash
+# Get the extraction prompt
+.claude/hooks/feedback-extract.sh prompt
+
+# After Claude answers, append the feedback
+.claude/hooks/feedback-extract.sh append "<claude output>"
+
+# Or run interactively (prints prompt, waits for paste)
+.claude/hooks/feedback-extract.sh
+```
+
+The extraction prompt instructs Claude to pull every correction, preference, and lesson
+from the conversation and format it as a structured block. `FEEDBACK.md` is committed
+and shared — the compounding is the point.
+
 ## Team Sharing
-Commit `.claude/agent-memory/` to share consolidated knowledge across developers.
-`MEMORY.md` is intentionally gitignored (per-session scratch) — only consolidated
-memories are shared.
+Commit `.claude/agent-memory/` and `.claude/FEEDBACK.md` to share consolidated
+knowledge across developers. `MEMORY.md` is intentionally gitignored (per-session
+scratch) — only consolidated memories and feedback are shared.

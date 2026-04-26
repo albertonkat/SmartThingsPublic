@@ -1,6 +1,7 @@
 # Per-session scratch — not shared
 MEMORY.md
 
-# Share consolidated memories and the index
+# Share consolidated memories, index, and feedback
 !agent-memory/
 !agent-memory/**
+!FEEDBACK.md
