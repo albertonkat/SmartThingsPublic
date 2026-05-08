@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartThings Second Brain — 3D Knowledge Graph</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #aef; }
+#canvas-container { position: fixed; inset: 0; }
+#overlay { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#title {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  font-size: 22px; font-weight: bold; color: #7ef;
+  text-shadow: 0 0 20px #0af, 0 0 40px #0af;
+  letter-spacing: 4px; text-transform: uppercase; white-space: nowrap;
+}
+#subtitle {
+  position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: #3a6; letter-spacing: 8px; text-transform: uppercase;
+}
+#stats {
+  position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: #446; letter-spacing: 1px; white-space: nowrap;
+}
+#tooltip {
+  position: absolute; display: none;
+  background: rgba(0,8,24,0.92); border: 1px solid #0af; border-radius: 6px;
+  padding: 12px 16px; max-width: 260px; pointer-events: none;
+  box-shadow: 0 0 24px rgba(0,170,255,0.25);
+}
+#tooltip .tt-name { font-size: 13px; color: #7ef; margin-bottom: 3px; font-weight: bold; }
+#tooltip .tt-type { font-size: 10px; color: #3a9; margin-bottom: 5px; letter-spacing: 2px; }
+#tooltip .tt-vendor { font-size: 10px; color: #778; margin-bottom: 5px; }
+#tooltip .tt-info { font-size: 10px; color: #7ef; opacity: 0.75; line-height: 1.5; }
+#legend {
+  position: absolute; bottom: 40px; left: 20px; font-size: 10px; line-height: 1.8;
+}
+.li { display: flex; align-items: center; gap: 8px; }
+.ld { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+#controls {
+  position: absolute; top: 110px; right: 20px;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: all;
+}
+.btn {
+  background: rgba(0,15,40,0.85); border: 1px solid #0af; border-radius: 4px;
+  color: #7ef; font-size: 10px; padding: 5px 11px; cursor: pointer;
+  font-family: 'Courier New', monospace; letter-spacing: 1px;
+  transition: background 0.15s; text-transform: uppercase;
+}
+.btn:hover { background: rgba(0,80,160,0.5); }
+.btn.off { border-color: #224; color: #446; }
+#searchbox {
+  position: absolute; top: 110px; left: 20px; pointer-events: all;
+}
+#search {
+  background: rgba(0,8,24,0.85); border: 1px solid #0af; border-radius: 4px;
+  color: #7ef; font-size: 11px; padding: 5px 11px; width: 190px;
+  font-family: 'Courier New', monospace; outline: none;
+}
+#search::placeholder { color: #334; }
+#hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; color: #334; letter-spacing: 2px; white-space: nowrap;
+}
+#loading {
+  position: fixed; inset: 0; background: #000511;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 100; transition: opacity 0.8s;
+}
+#loading .ltext { color: #0af; font-size: 13px; letter-spacing: 4px; margin-bottom: 16px; }
+#loading .lbar { width: 200px; height: 2px; background: #112; border-radius: 2px; overflow: hidden; }
+#loading .lfill { height: 100%; background: #0af; width: 0; transition: width 0.3s; box-shadow: 0 0 10px #0af; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loading">
+  <div class="ltext">INITIALISING SECOND BRAIN</div>
+  <div class="lbar"><div class="lfill" id="lfill"></div></div>
+</div>
+<div id="canvas-container"></div>
+<div id="overlay">
+  <div id="title">SmartThings Second Brain</div>
+  <div id="subtitle">3D Knowledge Graph</div>
+  <div id="stats"></div>
+  <div id="tooltip">
+    <div class="tt-name"></div>
+    <div class="tt-type"></div>
+    <div class="tt-vendor"></div>
+    <div class="tt-info"></div>
+  </div>
+  <div id="legend">
+    <div class="li"><div class="ld" style="background:#FFD700;box-shadow:0 0 5px #FFD700"></div><span>Lighting</span></div>
+    <div class="li"><div class="ld" style="background:#00BFFF;box-shadow:0 0 5px #00BFFF"></div><span>Motion / Presence</span></div>
+    <div class="li"><div class="ld" style="background:#FF4444;box-shadow:0 0 5px #FF4444"></div><span>Security</span></div>
+    <div class="li"><div class="ld" style="background:#44FF88;box-shadow:0 0 5px #44FF88"></div><span>Environment</span></div>
+    <div class="li"><div class="ld" style="background:#FF8C00;box-shadow:0 0 5px #FF8C00"></div><span>Climate</span></div>
+    <div class="li"><div class="ld" style="background:#00FFFF;box-shadow:0 0 5px #00FFFF"></div><span>Energy</span></div>
+    <div class="li"><div class="ld" style="background:#C869FF;box-shadow:0 0 5px #C869FF"></div><span>Media / Control</span></div>
+    <div class="li"><div class="ld" style="background:#6C8EBF;box-shadow:0 0 5px #6C8EBF"></div><span>SmartApps</span></div>
+    <div class="li"><div class="ld" style="background:#82B366;box-shadow:0 0 5px #82B366"></div><span>Device Types</span></div>
+  </div>
+  <div id="controls">
+    <button class="btn" id="btn-apps">Apps</button>
+    <button class="btn" id="btn-devices">Devices</button>
+    <button class="btn" id="btn-caps">Capabilities</button>
+    <button class="btn" id="btn-edges">Connections</button>
+    <button class="btn" id="btn-rotate">Auto-Rotate</button>
+  </div>
+  <div id="searchbox">
+    <input type="text" id="search" placeholder="Search nodes...">
+  </div>
+  <div id="hint">DRAG · SCROLL · CLICK TO EXPLORE</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ─── DATA ──────────────────────────────────────────────────────────────────
+
+const CAP_CATEGORIES = {
+  switch:'lighting', switchLevel:'lighting', colorControl:'lighting',
+  colorTemperature:'lighting', light:'lighting',
+  motionSensor:'presence', presenceSensor:'presence', accelerationSensor:'presence',
+  button:'presence', beacon:'presence',
+  lock:'security', alarm:'security', smokeDetector:'security',
+  carbonMonoxideDetector:'security', imageCapture:'security', videoCapture:'security',
+  contactSensor:'environment', temperatureMeasurement:'environment',
+  relativeHumidityMeasurement:'environment', illuminanceMeasurement:'environment',
+  waterSensor:'environment', battery:'environment',
+  powerMeter:'energy', energyMeter:'energy',
+  thermostat:'climate', carbonDioxideMeasurement:'climate',
+  musicPlayer:'media', mediaController:'media', valve:'media',
+  doorControl:'media', garageDoorControl:'media', windowShade:'media',
+};
+
+const CAT_COLOR = {
+  lighting:'#FFD700', presence:'#00BFFF', security:'#FF4444',
+  environment:'#44FF88', energy:'#00FFFF', climate:'#FF8C00', media:'#C869FF',
+};
+
+const INTERESTING = new Set([
+  'switch','switchLevel','colorControl','colorTemperature',
+  'motionSensor','contactSensor','presenceSensor','accelerationSensor','button','beacon',
+  'lock','alarm','smokeDetector','carbonMonoxideDetector','imageCapture','videoCapture',
+  'temperatureMeasurement','relativeHumidityMeasurement','illuminanceMeasurement',
+  'waterSensor','battery','powerMeter','energyMeter','thermostat','carbonDioxideMeasurement',
+  'musicPlayer','mediaController','valve','doorControl','garageDoorControl','windowShade',
+]);
+
+const RAW_APPS = [
+  ['arno','Bright When Dark',['switch','switchLevel','motionSensor','illuminanceMeasurement']],
+  ['dooglave','Let There Be Dark',['contactSensor','switch']],
+  ['resteele','Monitor on Sense',['accelerationSensor','switch']],
+  ['sheikhsphere','Smart Humidifier',['relativeHumidityMeasurement','switch']],
+  ['com-sudarkoff','Working From Home',['presenceSensor']],
+  ['opent2t','OpenT2T Test App',['contactSensor','garageDoorControl','lock','videoCapture','motionSensor','presenceSensor','switch','thermostat','waterSensor']],
+  ['mager','Weather Underground Connect',['temperatureMeasurement','relativeHumidityMeasurement']],
+  ['statusbits','Smart Alarm',['contactSensor','motionSensor','accelerationSensor','smokeDetector','waterSensor','alarm','switch','imageCapture','musicPlayer','button']],
+  ['jonathan-a','Auto Humidity Vent',['relativeHumidityMeasurement','switch','energyMeter']],
+  ['smart-auto-lock-unlock','Smart Auto Lock / Unlock',['lock','contactSensor']],
+  ['sidjohn1','Smart Turn It On',['switch','presenceSensor']],
+  ['com-vinli-smartthings','Vinli Home Connect',['switch','lock']],
+  ['user8798','Lock at Specific Time',['lock','contactSensor']],
+  ['naissan','Lights Off No Motion',['switch','motionSensor','presenceSensor']],
+  ['jls','My Light Toggle',['motionSensor','switch']],
+  ['com-andrewreitz','Jenkins Notifier',['switch','colorControl']],
+  ['michaelstruck','Color Coordinator',['colorControl']],
+  ['michaelstruck','Switch Activates Mode',['switch']],
+  ['michaelstruck','Talking Alarm Clock',['musicPlayer','switch','switchLevel','thermostat','temperatureMeasurement','relativeHumidityMeasurement']],
+  ['curb','Curb Control',['switch']],
+  ['vlaminck','Alfred Workflow',['switch','lock']],
+  ['dianoga','CO2 Vent',['carbonDioxideMeasurement','switch']],
+  ['dianoga','Thermostat Auto Off',['thermostat','contactSensor']],
+  ['michaelstruck','Smart Home Ventilation',['switch']],
+  ['roomieremote-ratrigger','Simple Sync Trigger',['mediaController','motionSensor','contactSensor','accelerationSensor','switch','presenceSensor','button']],
+  ['johnrucker','Door to Color Light',['doorControl','colorControl']],
+  ['johnrucker','Door Jammed Alert',['doorControl']],
+  ['egid','Smart Windows',['contactSensor','temperatureMeasurement']],
+  ['egid','Weather Windows',['contactSensor','temperatureMeasurement']],
+  ['dianoga','Whole House Fan',['temperatureMeasurement','switch','thermostat','contactSensor']],
+  ['smartthings','Thermostats',['smokeDetector','carbonMonoxideDetector','thermostat']],
+  ['smartthings','Curling Iron',['motionSensor','presenceSensor','switch']],
+  ['smartthings','Logitech Harmony',['switch','motionSensor','contactSensor','thermostat','presenceSensor','temperatureMeasurement','accelerationSensor','waterSensor','illuminanceMeasurement','relativeHumidityMeasurement','alarm','lock']],
+  ['smartthings','Bon Voyage',['presenceSensor']],
+  ['smartthings','Turn On For 5 Min',['contactSensor','switch']],
+  ['smartthings','Power Allowance',['switch']],
+  ['smartthings','Light Follows Me',['motionSensor','switch']],
+  ['smartthings','Sunrise/Sunset',['switch']],
+  ['smartthings','Make It So',['switch','thermostat','lock']],
+  ['smartthings','Notify Me With Hue',['colorControl','motionSensor','contactSensor','accelerationSensor','switch','presenceSensor','smokeDetector','waterSensor','button']],
+  ['smartthings','Sonos Music Modes',['musicPlayer']],
+  ['smartthings','Carpool Notifier',['presenceSensor']],
+  ['smartthings','Smart Security',['motionSensor','contactSensor','alarm','switch']],
+  ['smartthings','Cameras On When Away',['presenceSensor','switch']],
+  ['smartthings','Virtual Thermostat',['temperatureMeasurement','switch','motionSensor']],
+  ['smartthings','Energy Saver',['powerMeter','switch']],
+  ['smartthings','The Big Switch',['switch','switchLevel']],
+  ['smartthings','Close The Valve',['waterSensor','valve']],
+  ['smartthings','Brighten Dark Places',['contactSensor','illuminanceMeasurement','switch']],
+  ['smartthings','Lock It When I Leave',['presenceSensor','lock']],
+  ['smartthings','Ecobee Connect',['thermostat','temperatureMeasurement']],
+  ['smartthings','Sleepy Time',['switch','switchLevel','musicPlayer']],
+  ['encored-technologies','Smart Energy Service',['powerMeter','switch']],
+  ['shabbatholidaymode','Shabbat & Holiday Modes',['switch']],
+  ['wackford','Quirky Connect',['switch','contactSensor','motionSensor']],
+  ['wackford','TCP Bulbs Connect',['switch','switchLevel']],
+  ['dianoga','Netatmo Connect',['temperatureMeasurement','relativeHumidityMeasurement']],
+  ['imbrianj','Good Night',['switch','lock','presenceSensor']],
+];
+
+const RAW_DEVICES = [
+  ['wackford','Quirky Wink Porkfolio',['accelerationSensor','battery']],
+  ['wackford','Quirky Wink Powerstrip',['switch']],
+  ['wackford','TCP Bulb',['switch','powerMeter','switchLevel']],
+  ['wackford','Quirky Wink Spotter',['temperatureMeasurement','accelerationSensor','motionSensor','relativeHumidityMeasurement']],
+  ['dianoga','Netatmo Additional Module',['relativeHumidityMeasurement','temperatureMeasurement']],
+  ['dianoga','Netatmo Outdoor Module',['relativeHumidityMeasurement','temperatureMeasurement']],
+  ['dianoga','Netatmo Basestation',['relativeHumidityMeasurement','temperatureMeasurement']],
+  ['erocm123','Switch Child Device',['switch']],
+  ['erocm123','Inovelli 2-Ch Smart Plug',['switch']],
+  ['keen-home','Keen Home Smart Vent',['switchLevel','switch','temperatureMeasurement','battery']],
+  ['smartthings','Everspring ST814',['temperatureMeasurement','relativeHumidityMeasurement','battery']],
+  ['smartthings','Hue Bulb',['switchLevel','colorControl','colorTemperature','switch']],
+  ['smartthings','ZigBee RGB Bulb',['colorControl','switch','switchLevel']],
+  ['smartthings','ZLL White Color Temp Bulb',['colorTemperature','switch','switchLevel']],
+  ['smartthings','Open/Closed Sensor',['contactSensor']],
+  ['smartthings','Z-Wave Smoke Alarm',['smokeDetector','carbonMonoxideDetector','battery']],
+  ['smartthings','Aeon Siren',['alarm','switch']],
+  ['smartthings','Fidure Thermostat',['temperatureMeasurement','thermostat']],
+  ['smartthings','Harmony Activity',['switch']],
+  ['smartthings','Cooper RF9500',['switch','switchLevel','button']],
+  ['smartthings','Fibaro Dimmer',['switchLevel','switch']],
+  ['smartthings','Wattvision',['powerMeter']],
+  ['smartthings','Hue Bloom',['switchLevel','colorControl','switch']],
+  ['smartthings','Aeon Illuminator Module',['energyMeter','switchLevel','switch']],
+  ['smartthings','Tyco Door/Window Sensor',['battery','contactSensor','temperatureMeasurement']],
+  ['smartthings','SmartSense Garage Door',['garageDoorControl','contactSensor','accelerationSensor','temperatureMeasurement','battery']],
+  ['smartthings','Secure Dimmer',['switchLevel','switch']],
+  ['smartthings','Ecobee Thermostat',['thermostat','temperatureMeasurement','relativeHumidityMeasurement']],
+  ['smartthings','SmartSense Virtual Open/Closed',['contactSensor','accelerationSensor','temperatureMeasurement']],
+  ['smartthings','Cree Bulb',['switch','switchLevel']],
+  ['smartthings','Aeon Minimote',['button']],
+  ['smartthings','NYCE Motion Sensor',['motionSensor','battery']],
+  ['smartthings','ZigBee RGBW Bulb',['colorControl','colorTemperature','switch','switchLevel']],
+  ['smartthings','SmartSense Temp/Humidity',['temperatureMeasurement','relativeHumidityMeasurement','battery']],
+  ['smartthings','Wemo Switch',['switch']],
+  ['smartthings','Z-Wave Lock',['lock','battery']],
+  ['smartthings','Aeon Outlet',['energyMeter','switch']],
+  ['smartthings','Z-Wave Garage Door Opener',['doorControl','garageDoorControl','contactSensor']],
+  ['smartthings','Ecobee Switch',['switch']],
+  ['smartthings','Aeon SmartStrip',['switch','energyMeter','powerMeter']],
+  ['smartthings','LIFX Color Bulb',['colorControl','colorTemperature','switch','switchLevel']],
+  ['smartthings','Danalock',['lock','battery']],
+  ['smartthings','Life360 User',['presenceSensor']],
+  ['smartthings','Wemo Motion',['motionSensor']],
+  ['smartthings','NYCE Open/Closed Sensor',['contactSensor','battery']],
+  ['smartthings','HomeSeer Multisensor',['motionSensor','temperatureMeasurement','illuminanceMeasurement','battery']],
+  ['smartthings','Z-Wave Water Sensor',['waterSensor','battery']],
+  ['smartthings','SmartSense Moisture Sensor',['temperatureMeasurement','waterSensor','battery']],
+  ['smartthings','On/Off Shield',['switch']],
+  ['smartthings','Aeon Multisensor',['motionSensor','temperatureMeasurement','relativeHumidityMeasurement','illuminanceMeasurement','battery']],
+  ['smartthings','Aeon Multisensor Gen5',['motionSensor','temperatureMeasurement','relativeHumidityMeasurement','illuminanceMeasurement','battery']],
+  ['smartthings','RGBW Light',['switchLevel','colorControl','colorTemperature','switch']],
+  ['smartthings','Fibaro RGBW Controller',['switchLevel','colorControl','switch']],
+  ['smartthings','Light Sensor',['illuminanceMeasurement']],
+  ['smartthings','Ecobee Sensor',['temperatureMeasurement','motionSensor']],
+  ['smartthings','ZigBee Button',['battery','button']],
+];
+
+// ─── BUILD GRAPH ───────────────────────────────────────────────────────────
+
+function capLabel(key) {
+  return key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+}
+
+function buildGraph() {
+  const capMap = new Map();
+  const nodes = [];
+  const edges = [];
+
+  // Collect all caps that actually appear
+  const allCaps = new Set();
+  for (const [,,caps] of RAW_APPS) caps.forEach(c => INTERESTING.has(c) && allCaps.add(c));
+  for (const [,,caps] of RAW_DEVICES) caps.forEach(c => INTERESTING.has(c) && allCaps.add(c));
+
+  // Capability nodes
+  for (const cap of allCaps) {
+    const cat = CAP_CATEGORIES[cap] || 'media';
+    const node = { id:'cap-'+cap, name:capLabel(cap), type:'capability', cat, color:CAT_COLOR[cat], connections:0, caps:[] };
+    capMap.set(cap, node);
+    nodes.push(node);
+  }
+
+  // SmartApp nodes + edges
+  for (let i = 0; i < RAW_APPS.length; i++) {
+    const [vendor,name,caps] = RAW_APPS[i];
+    const node = { id:'app-'+i, name, type:'smartapp', vendor, color:'#6C8EBF', connections:0, caps:[] };
+    nodes.push(node);
+    const seen = new Set();
+    for (const c of caps) {
+      if (!INTERESTING.has(c) || seen.has(c)) continue;
+      seen.add(c);
+      const cn = capMap.get(c);
+      if (!cn) continue;
+      node.caps.push(cn.name);
+      cn.connections++;
+      node.connections++;
+      edges.push({ source:node, target:cn });
+    }
+  }
+
+  // Device nodes + edges
+  for (let i = 0; i < RAW_DEVICES.length; i++) {
+    const [vendor,name,caps] = RAW_DEVICES[i];
+    const node = { id:'dev-'+i, name, type:'devicetype', vendor, color:'#82B366', connections:0, caps:[] };
+    nodes.push(node);
+    const seen = new Set();
+    for (const c of caps) {
+      if (!INTERESTING.has(c) || seen.has(c)) continue;
+      seen.add(c);
+      const cn = capMap.get(c);
+      if (!cn) continue;
+      node.caps.push(cn.name);
+      cn.connections++;
+      node.connections++;
+      edges.push({ source:node, target:cn });
+    }
+  }
+
+  return { nodes, edges };
+}
+
+// ─── FORCE SIMULATION ─────────────────────────────────────────────────────
+
+function simulate(nodes, edges, onProgress) {
+  const R = 160;
+  for (const n of nodes) {
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2*Math.random()-1);
+    const r  = R * (0.4 + Math.random() * 0.6);
+    n.px = r * Math.sin(ph) * Math.cos(th);
+    n.py = r * Math.sin(ph) * Math.sin(th);
+    n.pz = r * Math.cos(ph);
+    n.vx = n.vy = n.vz = 0;
+  }
+
+  const ITERS = 280;
+  const repK  = 7000;
+  const sprK  = 0.08;
+  const sprL  = 70;
+  const damp  = 0.82;
+  const clust = 0.6;
+
+  for (let iter = 0; iter < ITERS; iter++) {
+    const alpha = 1 - iter / ITERS;
+
+    for (const n of nodes) { n.fx = 0; n.fy = 0; n.fz = 0; }
+
+    // Repulsion O(n²) — fast enough for ~160 nodes
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i+1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = a.px-b.px, dy = a.py-b.py, dz = a.pz-b.pz;
+        const r2 = dx*dx + dy*dy + dz*dz + 1;
+        const r  = Math.sqrt(r2);
+        const f  = repK / r2;
+        dx /= r; dy /= r; dz /= r;
+        a.fx += f*dx; a.fy += f*dy; a.fz += f*dz;
+        b.fx -= f*dx; b.fy -= f*dy; b.fz -= f*dz;
+      }
+    }
+
+    // Springs
+    for (const e of edges) {
+      const a = e.source, b = e.target;
+      let dx = b.px-a.px, dy = b.py-a.py, dz = b.pz-a.pz;
+      const r = Math.sqrt(dx*dx+dy*dy+dz*dz) + 0.01;
+      const f = sprK * (r - sprL);
+      dx /= r; dy /= r; dz /= r;
+      a.fx += f*dx; a.fy += f*dy; a.fz += f*dz;
+      b.fx -= f*dx; b.fy -= f*dy; b.fz -= f*dz;
+    }
+
+    // Cluster gravity
+    for (const n of nodes) {
+      const ty = n.type==='smartapp' ? 90 : n.type==='devicetype' ? -90 : 0;
+      n.fy += clust * (ty - n.py) * alpha;
+    }
+
+    // Integrate
+    for (const n of nodes) {
+      n.vx = (n.vx + n.fx * 0.1) * damp;
+      n.vy = (n.vy + n.fy * 0.1) * damp;
+      n.vz = (n.vz + n.fz * 0.1) * damp;
+      n.px += n.vx; n.py += n.vy; n.pz += n.vz;
+    }
+
+    if (iter % 40 === 0) onProgress(iter / ITERS);
+  }
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────────────────
+
+const { nodes, edges } = buildGraph();
+
+const lfill = document.getElementById('lfill');
+function setProgress(p) { lfill.style.width = (p * 100) + '%'; }
+
+// Run simulation async so the loading bar renders
+await new Promise(resolve => setTimeout(resolve, 50));
+simulate(nodes, edges, p => setProgress(p * 0.9));
+setProgress(1);
+await new Promise(resolve => setTimeout(resolve, 80));
+
+// ─── THREE.JS ─────────────────────────────────────────────────────────────
+
+const W = window.innerWidth, H = window.innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000511);
+scene.fog = new THREE.FogExp2(0x000511, 0.0022);
+
+const camera = new THREE.PerspectiveCamera(58, W/H, 0.5, 2000);
+camera.position.set(0, 60, 310);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 40;
+controls.maxDistance = 700;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.25;
+
+// Bloom
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 1.4, 0.5, 0.15);
+composer.addPass(bloom);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x0a1a33, 3));
+const pl1 = new THREE.PointLight(0x2255ff, 4, 700); pl1.position.set(150, 200, 100); scene.add(pl1);
+const pl2 = new THREE.PointLight(0xff3300, 3, 600); pl2.position.set(-200,-100,-150); scene.add(pl2);
+
+// Stars
+const starPos = new Float32Array(4000*3);
+for (let i = 0; i < 4000*3; i++) starPos[i] = (Math.random()-0.5)*2200;
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0x3355aa, size:0.5 })));
+
+// ─── NODES ────────────────────────────────────────────────────────────────
+
+const meshes = [];
+const nodeById = new Map();
+
+for (const node of nodes) {
+  let r;
+  if (node.type === 'capability') r = 4 + Math.min(node.connections * 0.7, 11);
+  else r = 3.2;
+
+  const geo = new THREE.SphereGeometry(r, 20, 20);
+  const col = new THREE.Color(node.color);
+  const mat = new THREE.MeshStandardMaterial({
+    color: col,
+    emissive: col,
+    emissiveIntensity: node.type==='capability' ? 1.0 : 0.55,
+    roughness: 0.25,
+    metalness: 0.45,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(node.px, node.py, node.pz);
+  mesh.userData = { node, baseEI: mat.emissiveIntensity, baseColor: col.clone(), r };
+  scene.add(mesh);
+  meshes.push(mesh);
+  nodeById.set(node.id, mesh);
+}
+
+// ─── EDGES ────────────────────────────────────────────────────────────────
+
+const edgeGroup = new THREE.Group();
+const edgeMats = [];
+
+for (const e of edges) {
+  const sm = nodeById.get(e.source.id);
+  const tm = nodeById.get(e.target.id);
+  if (!sm || !tm) continue;
+  const pts = [sm.position.clone(), tm.position.clone()];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({
+    color: new THREE.Color(e.target.color),
+    transparent: true, opacity: 0.16, depthWrite: false,
+  });
+  edgeGroup.add(new THREE.Line(geo, mat));
+  edgeMats.push(mat);
+}
+scene.add(edgeGroup);
+
+// ─── LABELS (capabilities only) ───────────────────────────────────────────
+
+function makeSprite(text, hexColor) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 48;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillStyle = hexColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 24);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, opacity:0.9 }));
+  sp.scale.set(36, 7, 1);
+  return sp;
+}
+
+for (const node of nodes) {
+  if (node.type !== 'capability') continue;
+  const mesh = nodeById.get(node.id);
+  const sp = makeSprite(node.name, node.color);
+  sp.position.copy(mesh.position);
+  sp.position.y += mesh.userData.r + 7;
+  scene.add(sp);
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────
+
+const nApps = nodes.filter(n=>n.type==='smartapp').length;
+const nDevs = nodes.filter(n=>n.type==='devicetype').length;
+const nCaps = nodes.filter(n=>n.type==='capability').length;
+document.getElementById('stats').textContent =
+  `${nApps} SmartApps · ${nDevs} Devices · ${nCaps} Capabilities · ${edges.length} Connections`;
+
+// ─── INTERACTION ──────────────────────────────────────────────────────────
+
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const tooltip = document.getElementById('tooltip');
+let hovered = null, selected = null;
+
+function highlight(node) {
+  const connected = new Set([node.id]);
+  const edgeIdxs = new Set();
+  edges.forEach((e,i) => {
+    if (e.source.id===node.id || e.target.id===node.id) {
+      connected.add(e.source.id); connected.add(e.target.id); edgeIdxs.add(i);
+    }
+  });
+  meshes.forEach(m => {
+    const on = connected.has(m.userData.node.id);
+    m.material.emissive.copy(m.userData.baseColor).multiplyScalar(on ? 1.5 : 0.12);
+    m.material.emissiveIntensity = on ? m.userData.baseEI * 1.6 : m.userData.baseEI * 0.15;
+  });
+  edgeMats.forEach((mat,i) => { mat.opacity = edgeIdxs.has(i) ? 0.75 : 0.03; });
+}
+
+function reset() {
+  meshes.forEach(m => {
+    m.material.emissive.copy(m.userData.baseColor);
+    m.material.emissiveIntensity = m.userData.baseEI;
+  });
+  edgeMats.forEach(mat => { mat.opacity = 0.16; });
+}
+
+function showTip(node, x, y) {
+  tooltip.querySelector('.tt-name').textContent = node.name;
+  tooltip.querySelector('.tt-type').textContent =
+    node.type==='capability' ? '⬡ CAPABILITY' :
+    node.type==='smartapp'   ? '◈ SMART APP'  : '◉ DEVICE TYPE';
+  tooltip.querySelector('.tt-vendor').textContent = node.vendor ? `by ${node.vendor}` : '';
+  tooltip.querySelector('.tt-info').textContent =
+    node.type==='capability'
+      ? `${node.connections} connections · ${node.cat}`
+      : (node.caps.length ? node.caps.join(' · ') : '');
+  tooltip.style.left = Math.min(x+14, innerWidth-280)+'px';
+  tooltip.style.top  = Math.min(y-10, innerHeight-140)+'px';
+  tooltip.style.display = 'block';
+}
+
+renderer.domElement.addEventListener('mousemove', e => {
+  mouse.x = (e.clientX/W)*2-1;
+  mouse.y = -(e.clientY/H)*2+1;
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects(meshes);
+  if (hits.length) {
+    const node = hits[0].object.userData.node;
+    if (hovered !== node) { hovered = node; if (!selected) highlight(node); }
+    showTip(node, e.clientX, e.clientY);
+    renderer.domElement.style.cursor = 'pointer';
+  } else {
+    if (hovered) { hovered = null; if (!selected) reset(); tooltip.style.display='none'; }
+    renderer.domElement.style.cursor = 'default';
+  }
+});
+
+renderer.domElement.addEventListener('click', e => {
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects(meshes);
+  if (hits.length) {
+    const node = hits[0].object.userData.node;
+    if (selected === node) { selected = null; hovered ? highlight(hovered) : reset(); }
+    else { selected = node; highlight(node); }
+  } else { selected = null; hovered ? highlight(hovered) : reset(); }
+});
+
+// Search
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  if (!q) { selected ? highlight(selected) : hovered ? highlight(hovered) : reset(); return; }
+  meshes.forEach(m => {
+    const match = m.userData.node.name.toLowerCase().includes(q);
+    m.material.emissive.copy(m.userData.baseColor).multiplyScalar(match ? 2 : 0.08);
+    m.material.emissiveIntensity = match ? m.userData.baseEI * 2 : m.userData.baseEI * 0.08;
+  });
+  edgeMats.forEach(mat => { mat.opacity = 0.04; });
+});
+
+// Toggle buttons
+let showApps=true, showDevs=true, showCaps=true, showEdges=true, autoRot=true;
+function togBtn(id, flag, cb) {
+  const btn = document.getElementById(id);
+  btn.addEventListener('click', () => { flag = !flag; btn.classList.toggle('off'); cb(flag); });
+  return () => flag;
+}
+
+document.getElementById('btn-apps').addEventListener('click', e => {
+  showApps = !showApps; e.target.classList.toggle('off');
+  meshes.forEach(m => { if (m.userData.node.type==='smartapp') m.visible=showApps; });
+});
+document.getElementById('btn-devices').addEventListener('click', e => {
+  showDevs = !showDevs; e.target.classList.toggle('off');
+  meshes.forEach(m => { if (m.userData.node.type==='devicetype') m.visible=showDevs; });
+});
+document.getElementById('btn-caps').addEventListener('click', e => {
+  showCaps = !showCaps; e.target.classList.toggle('off');
+  meshes.forEach(m => { if (m.userData.node.type==='capability') m.visible=showCaps; });
+});
+document.getElementById('btn-edges').addEventListener('click', e => {
+  showEdges = !showEdges; e.target.classList.toggle('off');
+  edgeGroup.visible = showEdges;
+});
+document.getElementById('btn-rotate').addEventListener('click', e => {
+  autoRot = !autoRot; e.target.classList.toggle('off');
+  controls.autoRotate = autoRot;
+});
+
+// Resize
+window.addEventListener('resize', () => {
+  const w=innerWidth, h=innerHeight;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h); composer.setSize(w,h);
+});
+
+// ─── ANIMATION ────────────────────────────────────────────────────────────
+
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.008;
+
+  // Pulse capability nodes
+  for (const node of nodes) {
+    if (node.type !== 'capability') continue;
+    const m = nodeById.get(node.id);
+    if (!m) continue;
+    const pulse = 1 + 0.07 * Math.sin(t * 1.8 + node.px * 0.04 + node.pz * 0.03);
+    m.scale.setScalar(pulse);
+  }
+
+  // Drift lights for atmosphere
+  pl1.position.x = Math.sin(t * 0.25) * 220;
+  pl1.position.z = Math.cos(t * 0.18) * 180;
+  pl2.position.x = Math.sin(t * 0.2 + 2) * -180;
+  pl2.position.z = Math.cos(t * 0.22 + 1) * 160;
+
+  controls.update();
+  composer.render();
+}
+
+// Hide loading screen
+const loading = document.getElementById('loading');
+loading.style.opacity = '0';
+setTimeout(() => { loading.style.display='none'; }, 800);
+
+animate();
+</script>
+</body>
+</html>
